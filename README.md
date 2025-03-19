@@ -1,6 +1,6 @@
 # Benutzer-Rolle
 ## 1.	Anmeldung und Registrierung
-- Als Benutzer möchte ich mich registrieren können, um Zugang zur Chat-App zu erhalten.
+- Als Benutzer möchte ich mich registrieren können, um Zugang zur Chat-App zu erhalten. - WIP Orsolits
 - Als Benutzer möchte ich mich anmelden können, um Nachrichten senden und empfangen zu können.
 ## 2.	Chat-Funktionalität
 - Als Benutzer möchte ich Chat Räume erstellen können, um über verschiedene Themen zu chatten
