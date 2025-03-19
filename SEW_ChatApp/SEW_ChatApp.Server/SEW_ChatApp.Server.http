@@ -1,6 +1,0 @@
-@SEW_ChatApp.Server_HostAddress = http://localhost:5214
-
-GET {{SEW_ChatApp.Server_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

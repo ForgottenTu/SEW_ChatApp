@@ -1,0 +1,312 @@
+﻿@page "/Chat"
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@rendermode InteractiveAuto
+
+<PageTitle>Chat</PageTitle>
+
+@if (!_isRegistered)
+{
+    <div class="form-group">
+        <label for="user-name-input">
+            Choose a nickname:
+        </label>
+        <input id="user-name-input" @bind="_userName" class="form-control"/>
+        <button class="btn btn-primary mt-2" @onclick="ConfirmUserName">Confirm</button>
+    </div>
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="alert alert-danger">
+            @ErrorMessage
+        </div>
+    }
+}
+else
+{
+    <div class="row">
+        <div class="col-md-4">
+            <h4>Hello, @_userName!</h4>
+
+            @if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <div class="alert alert-danger">
+                    @ErrorMessage
+                </div>
+            }
+
+            <h5>Create a Room</h5>
+            <div class="mb-2">
+                <input placeholder="Room Name" @bind="CreateRoomName" class="form-control mb-1"/>
+                <button class="btn btn-success" @onclick="CreateRoom">Create Room</button>
+            </div>
+
+            <h5>Available Rooms</h5>
+            <ul class="list-group">
+                @if (Rooms?.Count == 0)
+                {
+                    <li class="list-group-item">No rooms available.</li>
+                }
+                else
+                {
+                    @foreach (var room in Rooms)
+                    {
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>@room.Value</span>
+                            <span>
+                                @if (CurrentRoomId != room.Key)
+                                {
+                                    <button class="btn btn-primary btn-sm me-1"
+                                            @onclick="() => JoinRoom(room.Key)">Join</button>
+                                }
+                                @if (CurrentRoomId == room.Key)
+                                {
+                                    <button class="btn btn-warning btn-sm me-1"
+                                            @onclick="() => LeaveRoom(room.Key)">Leave</button>
+                                }
+                                <button class="btn btn-danger btn-sm"
+                                        @onclick="() => DeleteRoom(room.Key)">Delete</button>
+                            </span>
+                        </li>
+                    }
+                }
+            </ul>
+        </div>
+
+        <div class="col-md-8">
+            <h4>
+                @if (!string.IsNullOrEmpty(CurrentRoomId))
+                {
+                    <span>Chat Room: @Rooms[CurrentRoomId]</span>
+                }
+                else
+                {
+                    <span>Not in a room</span>
+                }
+            </h4>
+
+            <div class="row">
+                <div class="col-md-8">
+                    <div>
+                        <input placeholder="Type a message..." @bind="MessageInput" size="50" class="form-control mb-1"/>
+                        <button class="btn btn-primary" @onclick="SendMessageToRoom"
+                                disabled="@(!IsConnected || string.IsNullOrEmpty(CurrentRoomId))">Send
+                        </button>
+                    </div>
+
+                    <hr/>
+
+                    <ul>
+                        @foreach (var msg in ChatMessages)
+                        {
+                            <li>@msg</li>
+                        }
+                    </ul>
+
+                </div>
+                <div class="col-md-4">
+                    <h5>Users in Room</h5>
+                    <ul class="list-group">
+                        @if (RoomUsers == null || RoomUsers.Count == 0)
+                        {
+                            <li class="list-group-item">No users in this room.</li>
+                        }
+                        else
+                        {
+                            @foreach (var user in RoomUsers)
+                            {
+                                <li class="list-group-item">@user</li>
+                            }
+                        }
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private HubConnection? hubConnection;
+
+    private string _userName = "";
+    private bool _isRegistered = false;
+    private string ErrorMessage { get; set; } = string.Empty;
+
+    private Dictionary<string, string> Rooms { get; set; } = new();
+    private string? CurrentRoomId { get; set; }
+
+    private string? CreateRoomName { get; set; }
+
+    private List<string> ChatMessages { get; set; } = new();
+    private string? MessageInput { get; set; }
+
+    private List<string> RoomUsers { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl("http://localhost:5095/Chathub")
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<bool>("Register", (success) =>
+        {
+            if (!success)
+            {
+                ErrorMessage = "The nickname is already taken. Please choose another one.";
+                _isRegistered = false;
+                InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            _isRegistered = true;
+            ErrorMessage = string.Empty;
+            hubConnection.SendAsync("GetRooms");
+
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On<string, string>("ReceiveMessage", (user, message) =>
+        {
+            ChatMessages.Add($"{user}: {message}");
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On<Dictionary<string, string>>("AllRooms", (rooms) =>
+        {
+            Rooms = rooms;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On<string, string>("RoomCreated", (roomId, roomName) =>
+        {
+            if (Rooms is null)
+            {
+                Rooms = new();
+            }
+
+            Rooms[roomId] = roomName;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On<string>("RoomDeleted", (roomId) =>
+        {
+            if (Rooms.ContainsKey(roomId))
+            {
+                Rooms.Remove(roomId);
+                if (CurrentRoomId == roomId)
+                {
+                    CurrentRoomId = null;
+                }
+            }
+
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On<string>("Error", (errorMsg) =>
+        {
+            ErrorMessage = errorMsg;
+            Task.Delay(5000).ContinueWith(_ =>
+            {
+                ErrorMessage = string.Empty;
+                InvokeAsync(StateHasChanged);
+            });
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On<List<string>>("RoomUsers", (users) =>
+        {
+            RoomUsers = users;
+            InvokeAsync(StateHasChanged);
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    private async Task ConfirmUserName()
+    {
+        if (string.IsNullOrEmpty(_userName))
+        {
+            ErrorMessage = "Please enter a user name.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        await hubConnection.SendAsync("Register", _userName);
+    }
+
+    private async Task CreateRoom()
+    {
+        if (hubConnection is not null && !string.IsNullOrEmpty(CreateRoomName))
+        {
+            await hubConnection.SendAsync("CreateRoom", CreateRoomName);
+            CreateRoomName = null;
+        }
+    }
+
+    private async Task DeleteRoom(string roomId)
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("DeleteRoom", roomId);
+        }
+    }
+
+    private async Task JoinRoom(string roomId)
+    {
+        if (!_isRegistered)
+        {
+            ErrorMessage = "You must register a nickname before joining a room.";
+            return;
+        }
+
+        if (hubConnection is not null)
+        {
+            if (CurrentRoomId != roomId)
+            {
+                if (!string.IsNullOrEmpty(CurrentRoomId))
+                {
+                    await hubConnection.SendAsync("LeaveRoom", CurrentRoomId);
+                }
+
+                await hubConnection.SendAsync("JoinRoom", roomId);
+                ChatMessages.Clear();
+                CurrentRoomId = roomId;
+            }
+        }
+    }
+
+    private async Task LeaveRoom(string roomId)
+    {
+        if (hubConnection is not null)
+        {
+            if (CurrentRoomId == roomId)
+            {
+                RoomUsers.Remove(_userName);
+                await hubConnection.SendAsync("LeaveRoom", roomId);
+                CurrentRoomId = null;
+                ChatMessages.Add("*** You left the room and wont recive any updates anymore ***");
+            }
+        }
+    }
+
+    private async Task SendMessageToRoom()
+    {
+        if (hubConnection is not null && !string.IsNullOrEmpty(CurrentRoomId))
+        {
+            await hubConnection.SendAsync("SendMessage", MessageInput, CurrentRoomId);
+            MessageInput = string.Empty;
+        }
+    }
+
+    public bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+}
