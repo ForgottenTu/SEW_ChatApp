@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "4xc6d2G+ZVo=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\julia\\OneDrive - HTL Krems\\Desktop\\Schule\\SEW\\4.jahr\\SEW_ChatApp\\SEW_ChatApp\\SEW_ChatApp.Server\\SEW_ChatApp.Server.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\julia\\.nuget\\packages\\microsoft.aspnetcore.openapi\\9.0.3\\microsoft.aspnetcore.openapi.9.0.3.nupkg.sha512",
+    "C:\\Users\\julia\\.nuget\\packages\\microsoft.openapi\\1.6.17\\microsoft.openapi.1.6.17.nupkg.sha512"
+  ],
+  "logs": []
+}
