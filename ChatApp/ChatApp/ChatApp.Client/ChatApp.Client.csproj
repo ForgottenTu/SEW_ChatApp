@@ -14,10 +14,4 @@
         <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.2" />
     </ItemGroup>
 
-    <ItemGroup>
-      <Content Include="..\..\.dockerignore">
-        <Link>.dockerignore</Link>
-      </Content>
-    </ItemGroup>
-
 </Project>
