@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatApp", "ChatApp\ChatApp\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatApp.Client", "ChatApp\ChatApp.Client\ChatApp.Client.csproj", "{C28B10D6-C106-4EC0-8134-55572BFE8866}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatApp.Model", "ChatApp.Model\ChatApp.Model.csproj", "{C640A7F3-E292-45F1-B1CE-671A849FCECE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{C28B10D6-C106-4EC0-8134-55572BFE8866}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C28B10D6-C106-4EC0-8134-55572BFE8866}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C28B10D6-C106-4EC0-8134-55572BFE8866}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C640A7F3-E292-45F1-B1CE-671A849FCECE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C640A7F3-E292-45F1-B1CE-671A849FCECE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C640A7F3-E292-45F1-B1CE-671A849FCECE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C640A7F3-E292-45F1-B1CE-671A849FCECE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
