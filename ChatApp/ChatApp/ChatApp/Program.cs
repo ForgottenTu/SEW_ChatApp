@@ -2,7 +2,7 @@ using ChatApp.Client.Pages;
 using ChatApp.Components;
 using ChatApp.Hubs;
 using ChatApp.Model.Context;
-using ChatApp.Model.Mdels;
+using ChatApp.Model.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,8 +11,8 @@ var builder = WebApplication.CreateBuilder(args);
 # region identity
 
 
-var connectionString = builder.Configuration.GetConnectionString("SQLServerIdentityConnection ") ?? throw new InvalidOperationException("Connection string 'SQLServerIdentityConnection' not found.");
-builder.Services.AddDbContext<ChatAppContext>(options =>
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'SQLServerIdentityConnection' not found.");
+builder.Services.AddDbContextFactory<ChatAppContext>(options =>
     options.UseSqlite(connectionString));
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>()

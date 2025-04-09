@@ -1,4 +1,4 @@
-using ChatApp.Model.Mdels;
+using ChatApp.Model.Models;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
