@@ -8,4 +8,7 @@ public class ApplicationUser: IdentityUser
     public string? LastName { get; set; }
     
     public Chatroom? Chatroom { get; set; }
+    
+    public string? ChatroomId { get; set; }    
+
 }

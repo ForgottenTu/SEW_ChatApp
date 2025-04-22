@@ -1,17 +1,20 @@
+using ChatApp.Domain.Interfaces;
 using ChatApp.Model.Context;
 using ChatApp.Model.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatApp.Domain.Repositories;
 
-public class ChatroomRepository(ChatAppContext context) : ARepository<Chatroom>(context)
+public class ChatroomRepository: ARepository<Chatroom>, IChatroomRepository
 {
-    private readonly ChatAppContext _context = context;
-
-    public async Task<List<Chatroom>> ReadAllAsync()
+    public ChatroomRepository(ChatAppContext context) : base(context)
     {
-        return await _context.Set<Chatroom>()
-            .Include(s => s.Name)
-            .ToListAsync();
+        
+    }
+
+
+    public Task<List<Chatroom>> GetChatroomsByNameAsync(string name)
+    {
+        throw new NotImplementedException();
     }
 }

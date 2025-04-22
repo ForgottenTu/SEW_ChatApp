@@ -32,9 +32,5 @@ public class ChatAppContext: IdentityDbContext<ApplicationUser>
             .WithMany()
             .HasForeignKey(m => m.UserId)
             .OnDelete(DeleteBehavior.Cascade);
- 
-
-
-
     }
 }

@@ -1,0 +1,87 @@
+@page "/register"
+@using System.ComponentModel.DataAnnotations
+@using ChatApp.Model.Models
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Nav
+
+<h3>Register</h3>
+
+@if (registerErrors.Any())
+{
+    <div class="alert alert-danger">
+        @foreach (var error in registerErrors)
+        {
+            <div>@error</div>
+        }
+    </div>
+}
+
+<EditForm Model="@registerModel" OnValidSubmit="RegisterUser" FormName="registerForm">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label for="email" class="form-label">E-Mail-Adresse</label>
+        <InputText id="email" class="form-control" @bind-Value="registerModel.Email" />
+        <ValidationMessage For="@(() => registerModel.Email)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="username" class="form-label">Benutzername</label>
+        <InputText id="username" class="form-control" @bind-Value="registerModel.UserName" />
+        <ValidationMessage For="@(() => registerModel.UserName)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="password" class="form-label">Passwort</label>
+        <InputText id="password" class="form-control" type="password" @bind-Value="registerModel.Password" />
+        <ValidationMessage For="@(() => registerModel.Password)" />
+    </div>
+
+    <button type="submit" class="btn btn-primary">Registrieren</button>
+</EditForm>
+
+@code {
+    private RegisterModel registerModel = new();
+    private List<string> registerErrors = new();
+
+    private async Task RegisterUser()
+    {
+        registerErrors.Clear();
+
+        var user = new ApplicationUser
+        {
+            UserName = registerModel.UserName,
+            Email = registerModel.Email
+        };
+
+        var result = await UserManager.CreateAsync(user, registerModel.Password);
+
+        if (result.Succeeded)
+        {
+            Nav.NavigateTo("/Login");
+        }
+        else
+        {
+            foreach (var error in result.Errors)
+            {
+                registerErrors.Add(error.Description);
+            }
+        }
+    }
+
+    public class RegisterModel
+    {
+        [Required(ErrorMessage = "E-Mail ist erforderlich.")]
+        [EmailAddress(ErrorMessage = "Ungültige E-Mail-Adresse.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Benutzername ist erforderlich.")]
+        public string UserName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Passwort ist erforderlich.")]
+        [MinLength(6, ErrorMessage = "Das Passwort muss mindestens 6 Zeichen lang sein.")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

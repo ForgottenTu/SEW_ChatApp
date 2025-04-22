@@ -4,5 +4,6 @@ namespace ChatApp.Domain.Interfaces;
 
 public interface IChatroomRepository : IRepository<Chatroom>
 {
-    Task<List<Chatroom>> ReadAllAsync();
+    Task<List<Chatroom>> GetChatroomsByNameAsync(string name); 
+
 }
