@@ -1,58 +1,182 @@
-using System.Linq.Expressions;
 using ChatApp.Domain.Interfaces;
 using ChatApp.Model.Context;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatApp.Domain.Repositories;
-public abstract class ARepository<TEntity>(ChatAppContext context) : IRepository<TEntity> 
-    where TEntity : class
+
+public class ARepository<TEntity> : IRepository<TEntity> where TEntity : class
 {
-    public virtual async Task<TEntity> CreateAsync(TEntity t)
+    protected readonly ChatAppContext Context;
+    protected readonly DbSet<TEntity> Table;
+
+    protected ARepository(ChatAppContext context)
     {
-        await context.Set<TEntity>().AddAsync(t);
-        await context.SaveChangesAsync();
-        return t;
+        this.Context = context;
+        Table = context.Set<TEntity>();
     }
-
-    public virtual async Task<List<TEntity>> CreateRangeAsync(List<TEntity> list)
-    {
-        await context.Set<TEntity>().AddRangeAsync();
-        await context.SaveChangesAsync();
-        return list;
-    }
-
-    public virtual async Task UpdateAsync(int id, TEntity t)
-    {
-        var existingEntity = await context.Set<TEntity>().FindAsync(id) ?? throw new KeyNotFoundException("Entity not found");
-        context.Entry(existingEntity).CurrentValues.SetValues(t);
-        await context.SaveChangesAsync();
-    }
-
-    public virtual async Task UpdateRangeAsync(List<TEntity> list)
-    {
-        context.Set<TEntity>().UpdateRange(list);
-        await context.SaveChangesAsync();
-    }
-
-    public virtual async Task<TEntity?> ReadAsync(int id) => await context.Set<TEntity>().FindAsync(id);
-
-    public virtual async Task<List<TEntity>> ReadAsync(Expression<Func<TEntity, bool>> filter) =>
-        await context.Set<TEntity>().Where(filter).ToListAsync();
-
-    public virtual async Task<List<TEntity>> ReadAsync(int start, int count) =>
-        await context.Set<TEntity>().Skip(start).Take(count).ToListAsync();
-
-    public virtual async Task<List<TEntity>> ReadAllAsync() => await context.Set<TEntity>().ToListAsync();
     
-    public virtual async Task DeleteAsync(int id, TEntity t)
+    public async Task<IEnumerable<TEntity>?> GetAllAsync()
     {
-        var existingEntity = await context.Set<TEntity>().FindAsync(id) ?? throw new KeyNotFoundException("Entity not found");
-        context.Set<TEntity>().Remove(existingEntity);
-        await context.SaveChangesAsync();
+        return await Table.ToListAsync();
     }
-    public async Task DeleteRangeAsync(List<TEntity> list)
+
+    public async Task<TEntity?> GetByIdAsync(int id)
     {
-        context.Set<TEntity>().RemoveRange(list);
-        await context.SaveChangesAsync();
+        ArgumentNullException.ThrowIfNull(id);
+        return await Table.FindAsync(id);
     }
+
+    public async Task<TEntity?> AddAsync(TEntity entity)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        var keyProperty = Context.Model.FindEntityType(typeof(TEntity))!
+            .FindPrimaryKey()!
+            .Properties[0];
+        var keyValue = keyProperty.PropertyInfo!.GetValue(entity);
+        
+        var existingEntity = await Table.FindAsync(keyValue);
+
+        if (existingEntity != null)
+            return null;
+        
+        await Table.AddAsync(entity);
+        await Context.SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task<IEnumerable<TEntity>?> CreateRangeAsync(IEnumerable<TEntity> entities)
+    {
+        ArgumentNullException.ThrowIfNull(entities);
+
+        var entityType = Context.Model.FindEntityType(typeof(TEntity));
+        var keyProperty = entityType.FindPrimaryKey().Properties.First();
+
+        var addedEntities = new List<TEntity>();
+
+        foreach (var entity in entities)
+        {
+            var keyValue = keyProperty.PropertyInfo.GetValue(entity);
+
+            var existingEntity = await Table.FindAsync(keyValue);
+
+            if (existingEntity != null) continue;
+            await Table.AddAsync(entity);
+            addedEntities.Add(entity);
+        }
+
+        if (addedEntities.Count == 0)
+        {
+            return null;
+        }
+
+        await Context.SaveChangesAsync();
+
+        return addedEntities;
+    }
+
+
+    public async Task<TEntity> UpSertAsync(TEntity entity)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        
+        var keyProperty = Context.Model.FindEntityType(typeof(TEntity))!
+            .FindPrimaryKey()!
+            .Properties
+            .First();
+        var keyValue = keyProperty.PropertyInfo!.GetValue(entity);
+        
+        var existingEntity = await Table.FindAsync(keyValue);
+
+        if (existingEntity == null)
+            await Table.AddAsync(entity);
+        else
+            Context.Entry(existingEntity).CurrentValues.SetValues(entity);
+
+        await Context.SaveChangesAsync();
+
+        return entity;
+    }
+
+    public async Task<IEnumerable<TEntity>> UpSertRangeAsync(IEnumerable<TEntity> entities)
+    {
+        ArgumentNullException.ThrowIfNull(entities);
+        
+        var entityType = Context.Model.FindEntityType(typeof(TEntity));
+        var keyProperty = entityType!.FindPrimaryKey()!.Properties[0];
+
+        foreach (var entity in entities)
+        {
+            var keyValue = keyProperty.PropertyInfo!.GetValue(entity);
+
+            var existingEntity = await Table.FindAsync(keyValue);
+
+            if (existingEntity == null)
+                await Table.AddAsync(entity);
+            else
+                Context.Entry(existingEntity).CurrentValues.SetValues(entity);
+        }
+
+        await Context.SaveChangesAsync();
+
+        return entities;
+    }
+
+    public async Task<TEntity?> DeleteAsyncById(int id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        
+        var entity = await Table.FindAsync(id);
+        if (entity is null) return null;
+        
+        Table.Remove(entity);
+        await Context.SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task<TEntity?> DeleteAsync(TEntity entity)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+
+        var entityType = Context.Model.FindEntityType(typeof(TEntity));
+        var keyProperty = entityType!.FindPrimaryKey()!.Properties[0];
+
+        var keyValue = keyProperty.PropertyInfo!.GetValue(entity);
+        var existingEntity = await Table.FindAsync(keyValue);
+
+        if (existingEntity == null) return null;
+        
+        Table.Remove(existingEntity);
+        await Context.SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task<IEnumerable<TEntity>?> DeleteRangeAsync(IEnumerable<TEntity> entities)
+    {
+        ArgumentNullException.ThrowIfNull(entities);
+
+        var entityType = Context.Model.FindEntityType(typeof(TEntity));
+        var keyProperty = entityType!.FindPrimaryKey()!.Properties[0];
+        var deletedEntities = new List<TEntity>();
+
+        foreach (var entity in entities)
+        {
+            var keyValue = keyProperty.PropertyInfo!.GetValue(entity);
+            var existingEntity = await Table.FindAsync(keyValue);
+            
+            if (existingEntity == null) continue;
+            
+            deletedEntities.Add(existingEntity);
+            Table.Remove(existingEntity);
+        }
+        await Context.SaveChangesAsync();
+
+        return deletedEntities;
+    }
+    
+    public async Task<IEnumerable<TEntity>?> GetPagedAsync(int page, int pageSize)
+    {
+        return await Table.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+    }
+
+    
 }

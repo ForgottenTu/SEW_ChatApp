@@ -5,23 +5,14 @@ namespace ChatApp.Domain.Interfaces;
 
 public interface IRepository<TEntity> where TEntity : class
 {
-    Task<TEntity> CreateAsync(TEntity t);
-
-    Task<List<TEntity>> CreateRangeAsync(List<TEntity> list);
-
-    Task UpdateAsync(int id, TEntity t);
-
-    Task UpdateRangeAsync(List<TEntity> list);
-
-    Task<TEntity?> ReadAsync(int id);
-
-    Task<List<TEntity>> ReadAsync(Expression<Func<TEntity, bool>> filter);
-
-    Task<List<TEntity>> ReadAsync(int start, int count);
-
-    Task<List<TEntity>> ReadAllAsync();
-
-    Task DeleteAsync(int id, TEntity t);
-
-    Task DeleteRangeAsync(List<TEntity> list);
+    Task<IEnumerable<TEntity>?> GetAllAsync();
+    Task<TEntity?> GetByIdAsync(int id);
+    Task<TEntity?> AddAsync(TEntity entity);
+    Task<IEnumerable<TEntity>?> CreateRangeAsync(IEnumerable<TEntity> entities);
+    Task<TEntity> UpSertAsync(TEntity entity);
+    Task<IEnumerable<TEntity>> UpSertRangeAsync(IEnumerable<TEntity> entities);
+    Task<TEntity?> DeleteAsyncById(int id);
+    Task<TEntity?> DeleteAsync(TEntity entity);
+    Task<IEnumerable<TEntity>?> DeleteRangeAsync(IEnumerable<TEntity> ids);
+    Task<IEnumerable<TEntity>?> GetPagedAsync(int page, int pageSize);
 }

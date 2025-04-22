@@ -8,7 +8,7 @@ public class ChatroomRepository(ChatAppContext context) : ARepository<Chatroom>(
 {
     private readonly ChatAppContext _context = context;
 
-    public override async Task<List<Chatroom>> ReadAllAsync()
+    public async Task<List<Chatroom>> ReadAllAsync()
     {
         return await _context.Set<Chatroom>()
             .Include(s => s.Name)
