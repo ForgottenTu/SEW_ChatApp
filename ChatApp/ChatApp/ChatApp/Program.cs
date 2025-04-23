@@ -4,13 +4,20 @@ using ChatApp.Domain.Repositories;
 using ChatApp.Hubs;
 using ChatApp.Model.Context;
 using ChatApp.Model.Models;
+
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
+/*
+ * Program.cs – ChatApp (Blazor Web App, .NET 8)
+ * -----------------------------------------------------------------------------
+ * Complete startup file with authentication‑aware SignalR configuration.
+ */
+
 var builder = WebApplication.CreateBuilder(args);
 
-// ────────────────────────────  Data / Identity  ────────────────────────────
+// ────────────────────────────────  Data / Identity  ───────────────────────────────
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
                      ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
@@ -20,20 +27,25 @@ builder.Services.AddDbContext<ChatAppContext>(opts =>
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
     .AddEntityFrameworkStores<ChatAppContext>()
-    .AddDefaultTokenProviders()
-    .AddDefaultUI();
+    .AddDefaultTokenProviders();
 
-builder.Services.AddSignalR(); 
+// Explicitly register authN / authZ middleware
+builder.Services.AddAuthentication();
+builder.Services.AddAuthorization();
 
-builder.Services.AddRazorPages();   // Identity UI (harmless if UI not added)
+builder.Services.AddHttpContextAccessor();              // needed to copy cookies to server‑side SignalR clients
+builder.Services.AddSignalR();
 
-// ─────────────────────────────  Blazor / MVC  ──────────────────────────────
+// Razor Pages (Identity UI) & controllers
+builder.Services.AddRazorPages();
+builder.Services.AddControllers();
 
+// Blazor (interactive server + optional WebAssembly)
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
 
-// ─────────────────────────────────  CORS  ───────────────────────────────────
+// ─────────────────────────────────────  CORS  ─────────────────────────────────────
 
 builder.Services.AddCors(options =>
 {
@@ -43,23 +55,20 @@ builder.Services.AddCors(options =>
           .AllowAnyOrigin());
 });
 
-// ───────────────────────────────  Repositories  ────────────────────────────
+// ───────────────────────────────────  Repositories  ─────────────────────────────────
 
 builder.Services.AddScoped<IChatRoomRepository, ChatRoomRepository>();
 builder.Services.AddScoped<IChatRoomMembershipRepository, ChatRoomMembershipRepository>();
 builder.Services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
 
-// ──────────────────────────────  Build / Pipeline  ─────────────────────────
-
-builder.Services.AddControllers();   // add this line
-
-// Register an HttpClient whose BaseAddress = https://{host}/
+// HttpClient whose BaseAddress = https://{host}/ (used by server‑side components)
 builder.Services.AddScoped(sp =>
 {
     var nav = sp.GetRequiredService<NavigationManager>();
     return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
 });
 
+// ──────────────────────────────────  Build / Pipeline  ─────────────────────────────
 
 var app = builder.Build();
 
@@ -73,26 +82,24 @@ else
     app.UseHsts();
 }
 
-app.MapControllers();               // add this after app.MapRazorPages();
-
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
 
 app.UseCors("CorsPolicy");
-app.UseAuthentication();
+app.UseAuthentication();                           // must appear before MapHub
 app.UseAuthorization();
+app.UseAntiforgery();
 
-app.UseAntiforgery();      // ⬅️  **added back – after authN/authZ, before endpoints**
+app.MapRazorPages();                               // Identity UI endpoints
+app.MapControllers();
 
-app.MapRazorPages();       // needed only if you scaffold/enable Identity UI
+app.MapHub<ChatHub>("/chathub").RequireAuthorization().DisableAntiforgery();   // secure SignalR hub
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .AddInteractiveWebAssemblyRenderMode()
     .AddAdditionalAssemblies(typeof(ChatApp.Client._Imports).Assembly);
-
-app.MapHub<ChatHub>("/chathub");
 
 app.Run();

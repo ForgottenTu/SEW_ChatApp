@@ -1,22 +1,22 @@
 @page "/login"
 @using System.ComponentModel.DataAnnotations
-@using System.Net.Http.Json
-@inject HttpClient         Http
-@inject NavigationManager  Nav
-@inject ILogger<Login>     Log
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ILogger<Login> Log
 
-@rendermode InteractiveServer
+@rendermode InteractiveWebAssembly
+
 <PageTitle>Log in</PageTitle>
 
 <h3>Log in</h3>
 
 <EditForm Model="_model" OnValidSubmit="HandleSubmit" FormName="LoginForm">
-    <DataAnnotationsValidator />
-    <ValidationSummary />
+    <DataAnnotationsValidator/>
+    <ValidationSummary/>
 
     <div class="mb-3">
         <label class="form-label">Email</label>
-        <InputText class="form-control" @bind-Value="_model.Email" />
+        <InputText class="form-control" @bind-Value="_model.Email"/>
     </div>
 
     <div class="mb-3">
@@ -25,12 +25,15 @@
     </div>
 
     <div class="form-check mb-3">
-        <InputCheckbox class="form-check-input" @bind-Value="_model.RememberMe" />
+        <InputCheckbox class="form-check-input" @bind-Value="_model.RememberMe"/>
         <label class="form-check-label">Remember&nbsp;me</label>
     </div>
 
     <button class="btn btn-primary" type="submit" disabled="@busy">
-        @if (busy) { <span class="spinner-border spinner-border-sm me-2" /> }
+        @if (busy)
+        {
+            <span class="spinner-border spinner-border-sm me-2"/>
+        }
         Log&nbsp;in
     </button>
 
@@ -55,7 +58,7 @@
         if (resp.IsSuccessStatusCode)
         {
             Log.LogInformation("User {Email} signed in.", _model.Email);
-            Nav.NavigateTo("/chat", replace: true);
+            Nav.NavigateTo("/chat", forceLoad: true);   // <-- add forceLoad
         }
         else
         {
@@ -67,8 +70,9 @@
 
     private sealed class LoginDto
     {
-        [Required, EmailAddress] public string Email      { get; set; } = "";
-        [Required]              public string Password   { get; set; } = "";
+        [Required, EmailAddress] public string Email { get; set; } = "";
+        [Required] public string Password { get; set; } = "";
         public bool RememberMe { get; set; }
     }
+
 }

@@ -1,0 +1,228 @@
+﻿@page "/chat"
+@using System.Net
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.AspNetCore.Http
+@implements IAsyncDisposable
+@inject NavigationManager Nav
+@inject ILogger<Chat> Log
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IHttpContextAccessor HttpCtx
+@rendermode InteractiveServer
+
+<PageTitle>Chat</PageTitle>
+
+@if (!_isRegistered)
+{
+    <div class="form-group">
+        <button class="btn btn-primary" @onclick="ConfirmUserName">Enter Chat</button>
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <div class="alert alert-danger mt-2">@ErrorMessage</div>
+        }
+    </div>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-4">
+            <h4>Hello, @_userName!</h4>
+
+            @if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <div class="alert alert-danger">@ErrorMessage</div>
+            }
+
+            <h5 class="mt-4">Create a room</h5>
+            <div class="input-group mb-3">
+                <input class="form-control" placeholder="Room name" @bind="CreateRoomName" />
+                <button class="btn btn-success" @onclick="CreateRoom">Create</button>
+            </div>
+
+            <h5>Available rooms</h5>
+            <ul class="list-group">
+                @foreach (var room in Rooms)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>@room.Value</span>
+                        <span>
+                            @if (CurrentRoomId != room.Key)
+                            {
+                                <button class="btn btn-primary btn-sm me-1" @onclick="() => JoinRoom(room.Key)">Join</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-warning btn-sm me-1" @onclick="() => LeaveRoom(room.Key)">Leave</button>
+                            }
+                            <button class="btn btn-danger btn-sm" @onclick="() => DeleteRoom(room.Key)">Delete</button>
+                        </span>
+                    </li>
+                }
+            </ul>
+        </div>
+
+        <div class="col-md-8">
+            <h4>@(string.IsNullOrEmpty(CurrentRoomId) ? "Not in a room" : $"Chat room: {Rooms[CurrentRoomId]}")</h4>
+
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="input-group mb-2">
+                        <input class="form-control" placeholder="Type a message..." @bind="MessageInput" />
+                        <button class="btn btn-primary" disabled="@(string.IsNullOrEmpty(CurrentRoomId) || !IsConnected)" @onclick="SendMessageToRoom">Send</button>
+                    </div>
+
+                    <hr />
+
+                    <ul class="list-unstyled">
+                        @foreach (var msg in ChatMessages)
+                        {
+                            <li>@msg</li>
+                        }
+                    </ul>
+                </div>
+
+                <div class="col-md-4">
+                    <h5>Users in room</h5>
+                    <ul class="list-group">
+                        @foreach (var user in RoomUsers)
+                        {
+                            <li class="list-group-item">@user</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /*──────────────────────────────  Connection  ──────────────────────────────*/
+
+    private HubConnection? hubConnection;
+    private string _userName = "";
+    private bool _isRegistered = false;
+
+    /*──────────────────────────────  State  ─────────────────────────────────*/
+
+    private Dictionary<string, string> Rooms = new();
+    private string? CurrentRoomId;
+    private string? CreateRoomName;
+    private string? MessageInput;
+
+    private readonly List<string> ChatMessages = new();
+    private readonly List<string> RoomUsers     = new();
+
+    private string ErrorMessage = string.Empty;
+
+    /*──────────────────────────  Lifecycle  ───────────────────────────────*/
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Figure out who we are (after Identity auth)
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user      = authState.User;
+        _userName     = user.Identity?.Name ?? "Guest";
+
+        // Build a CookieContainer that carries the Identity cookie into the
+        // *server‑side* HubConnection. Without this step the hub sees an
+        // anonymous user.
+        var cookieJar = new CookieContainer();
+        cookieJar.Add(new Uri(Nav.BaseUri),
+            new Cookie(".AspNetCore.Identity.Application",
+                HttpCtx.HttpContext?.Request.Cookies[".AspNetCore.Identity.Application"]));
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/chathub"), o =>
+            {
+                o.HttpMessageHandlerFactory = _ => new HttpClientHandler
+                {
+                    CookieContainer = cookieJar,
+                    UseCookies      = true
+                };
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        RegisterHubHandlers();
+        await hubConnection.StartAsync();
+
+        await ConfirmUserName();
+    }
+
+    private void RegisterHubHandlers()
+    {
+        if (hubConnection is null) return;
+
+        hubConnection.On<bool>("Register", HandleRegisterResult);
+        hubConnection.On<string, string>("ReceiveMessage", AddMessage);
+        hubConnection.On<Dictionary<string, string>>("AllRooms", rooms =>
+        {
+            Rooms = rooms; InvokeAsync(StateHasChanged);
+        });
+        hubConnection.On<string, string>("RoomCreated", (id, name) =>
+        {
+            Rooms[id] = name; InvokeAsync(StateHasChanged);
+        });
+        hubConnection.On<string>("RoomDeleted", id =>
+        {
+            Rooms.Remove(id);
+            if (CurrentRoomId == id) CurrentRoomId = null;
+            InvokeAsync(StateHasChanged);
+        });
+        hubConnection.On<string>("Error", ShowError);
+        hubConnection.On<List<string>>("RoomUsers", users =>
+        {
+            RoomUsers.Clear(); RoomUsers.AddRange(users); InvokeAsync(StateHasChanged);
+        });
+    }
+
+    /*─────────────────────────────  Hub calls  ─────────────────────────────*/
+
+    private async Task ConfirmUserName()
+    {
+        if (hubConnection is null) return;
+        await hubConnection.SendAsync("Register", _userName);
+    }
+
+    private void HandleRegisterResult(bool ok)
+    {
+        _isRegistered = ok;
+        if (!ok) ErrorMessage = "Could not register username.";
+        else hubConnection!.SendAsync("GetRooms");
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void AddMessage(string user, string message) => ChatMessages.Add($"{user}: {message}");
+
+    private void ShowError(string error)
+    {
+        ErrorMessage = error; InvokeAsync(StateHasChanged);
+    }
+
+    private Task CreateRoom() => !string.IsNullOrWhiteSpace(CreateRoomName)
+        ? hubConnection!.SendAsync("CreateRoom", CreateRoomName)
+        : Task.CompletedTask;
+
+    private Task DeleteRoom(string id) => hubConnection!.SendAsync("DeleteRoom", id);
+
+    private async Task JoinRoom(string id)
+    {
+        if (!string.IsNullOrEmpty(CurrentRoomId))
+            await hubConnection!.SendAsync("LeaveRoom", CurrentRoomId);
+
+        await hubConnection!.SendAsync("JoinRoom", id);
+        CurrentRoomId = id; ChatMessages.Clear();
+    }
+
+    private async Task LeaveRoom(string id) => await hubConnection!.SendAsync("LeaveRoom", id);
+
+    private Task SendMessageToRoom() => hubConnection!.SendAsync("SendMessage", CurrentRoomId, MessageInput);
+
+    /*────────────────────────────────  Helpers  ───────────────────────────*/
+
+    public bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
+
+    public async ValueTask DisposeAsync() =>
+        await hubConnection!.DisposeAsync();
+}

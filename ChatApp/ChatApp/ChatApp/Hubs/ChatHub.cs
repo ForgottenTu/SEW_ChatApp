@@ -1,10 +1,12 @@
 ﻿using ChatApp.Domain.Interfaces;
 using ChatApp.Model.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 
 namespace ChatApp.Hubs;
 
+[Authorize]
 public sealed class ChatHub : Hub
 {
     private readonly IChatRoomRepository _rooms;
