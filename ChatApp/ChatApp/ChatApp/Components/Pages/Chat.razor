@@ -215,7 +215,7 @@ else
             RoomUsers.AddRange(users);
             InvokeAsync(StateHasChanged);
         });
-        
+
         hubConnection.On<string>("LeftRoom", roomId =>
         {
             if (CurrentRoomId == roomId)
@@ -226,7 +226,6 @@ else
                 InvokeAsync(StateHasChanged);
             }
         });
-
     }
 
     /*─────────────────────────────  Hub calls  ─────────────────────────────*/
@@ -285,12 +284,12 @@ else
 
         if (CurrentRoomId == id)
         {
-            CurrentRoomId = null;          // you’re no longer in any room
-            ChatMessages.Clear();          // empty the chat window
-            RoomUsers.Clear();             // empty the user list
+            CurrentRoomId = null;
+            ChatMessages.Clear();
+            RoomUsers.Clear();
         }
 
-        InvokeAsync(StateHasChanged);      // force a re-render
+        await InvokeAsync(StateHasChanged);
     }
 
     private Task SendMessageToRoom() => hubConnection!.SendAsync("SendMessage", CurrentRoomId, MessageInput);
@@ -299,7 +298,10 @@ else
 
     public bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
 
-    public async ValueTask DisposeAsync() =>
+    public async ValueTask DisposeAsync()
+    {
+        await hubConnection!.SendAsync("LeaveRoom", CurrentRoomId);
         await hubConnection!.DisposeAsync();
+    }
 
 }

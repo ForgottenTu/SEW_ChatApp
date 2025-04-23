@@ -1,0 +1,22 @@
+@page "/Logout"
+@using Microsoft.AspNetCore.Authorization
+@inject HttpClient        Http
+@inject NavigationManager Nav
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Signing out…</PageTitle>
+<p class="text-muted">Signing you out…</p>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // 1) call the API to clear the cookie
+        await Http.PostAsync("api/Account/logout", null);
+
+        // 2) full reload → new circuit, no cookie, everything is cleared
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+}

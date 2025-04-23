@@ -15,11 +15,6 @@
     <ValidationSummary />
 
     <div class="mb-3">
-        <label class="form-label">Display name</label>
-        <InputText class="form-control" @bind-Value="model.DisplayName" />
-    </div>
-
-    <div class="mb-3">
         <label class="form-label">Email</label>
         <InputText class="form-control" @bind-Value="model.Email" />
     </div>
@@ -58,6 +53,8 @@
         busy = true;
         errors.Clear();
 
+        model.DisplayName = model.Email;
+
         var resp = await Http.PostAsJsonAsync("api/account/register", model);
 
         if (resp.IsSuccessStatusCode)
@@ -76,7 +73,7 @@
 
     private sealed class RegisterDto
     {
-        [Required, StringLength(32)]
+        [StringLength(32)]
         public string DisplayName { get; set; } = "";
 
         [Required, EmailAddress]
