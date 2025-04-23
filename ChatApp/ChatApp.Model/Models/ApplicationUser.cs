@@ -1,14 +1,9 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Identity;
 
 namespace ChatApp.Model.Models;
 
-public class ApplicationUser: IdentityUser
+public class ApplicationUser : IdentityUser
 {
-    public string? FirstName { get; set; }
-    public string? LastName { get; set; }
-    
-    public Chatroom? Chatroom { get; set; }
-    
-    public string? ChatroomId { get; set; }    
-
+    [MaxLength(40)] public string DisplayName { get; set; } = default!;
 }

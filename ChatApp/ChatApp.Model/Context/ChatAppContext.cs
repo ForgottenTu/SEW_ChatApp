@@ -4,33 +4,35 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChatApp.Model.Context;
 
-public class ChatAppContext: IdentityDbContext<ApplicationUser>
+public class ChatAppContext
+    : IdentityDbContext<ApplicationUser>
 {
-    public ChatAppContext(DbContextOptions<ChatAppContext> options)
-        : base(options)
-    {}
-    public DbSet<Chatroom> Chatrooms { get; set; }
-    public DbSet<Message> Messages { get; set; }
-
-    protected override void OnModelCreating(ModelBuilder builder)
+    public ChatAppContext(DbContextOptions<ChatAppContext> options) : base(options)
     {
-        base.OnModelCreating(builder);
-        
-        builder.Entity<ApplicationUser>()
-            .HasOne(u => u.Chatroom)
-            .WithMany(c => c.Users)
-            .HasForeignKey("ChatroomId") 
-            .OnDelete(DeleteBehavior.SetNull);
-        
-        builder.Entity<Message>()
-            .HasOne(m => m.Chatroom)
-            .WithMany()
+    }
+
+    public DbSet<ChatRoom> ChatRooms { get; set; }
+    public DbSet<ChatRoomMembership> ChatRoomMembers { get; set; }
+    public DbSet<ChatMessage> ChatMessages { get; set; }
+
+    protected override void OnModelCreating(ModelBuilder b)
+    {
+        base.OnModelCreating(b);
+
+        b.Entity<ChatRoom>()
+            .HasIndex(r => r.Name)
+            .IsUnique();
+
+        b.Entity<ChatRoomMembership>()
+            .HasOne(m => m.ChatRoom)
+            .WithMany(r => r.Members)
+            .HasForeignKey(m => m.ChatRoomId)
             .OnDelete(DeleteBehavior.Cascade);
-        
-        builder.Entity<Message>()
-            .HasOne<ApplicationUser>()  
-            .WithMany()
-            .HasForeignKey(m => m.UserId)
+
+        b.Entity<ChatMessage>()
+            .HasOne(m => m.ChatRoom)
+            .WithMany(r => r.Messages)
+            .HasForeignKey(m => m.ChatRoomId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

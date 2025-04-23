@@ -1,46 +1,68 @@
-using ChatApp.Client.Pages;
 using ChatApp.Components;
+using ChatApp.Domain.Interfaces;
+using ChatApp.Domain.Repositories;
 using ChatApp.Hubs;
 using ChatApp.Model.Context;
 using ChatApp.Model.Models;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-# region identity
+// ────────────────────────────  Data / Identity  ────────────────────────────
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+                     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'SQLServerIdentityConnection' not found.");
-builder.Services.AddDbContextFactory<ChatAppContext>(options =>
-    options.UseSqlite(connectionString));
+builder.Services.AddDbContext<ChatAppContext>(opts =>
+    opts.UseSqlite(connectionString));
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
-    .AddEntityFrameworkStores<ChatAppContext>();
+    .AddEntityFrameworkStores<ChatAppContext>()
+    .AddDefaultTokenProviders()
+    .AddDefaultUI();
 
-# endregion
+builder.Services.AddSignalR(); 
 
-// Add services to the container.
+builder.Services.AddRazorPages();   // Identity UI (harmless if UI not added)
+
+// ─────────────────────────────  Blazor / MVC  ──────────────────────────────
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
 
+// ─────────────────────────────────  CORS  ───────────────────────────────────
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("CorsPolicy", policyBuilder =>
-    {
-        policyBuilder.AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowAnyOrigin();
-    });
+    options.AddPolicy("CorsPolicy", pb =>
+        pb.AllowAnyHeader()
+          .AllowAnyMethod()
+          .AllowAnyOrigin());
 });
 
+// ───────────────────────────────  Repositories  ────────────────────────────
+
+builder.Services.AddScoped<IChatRoomRepository, ChatRoomRepository>();
+builder.Services.AddScoped<IChatRoomMembershipRepository, ChatRoomMembershipRepository>();
+builder.Services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
+
+// ──────────────────────────────  Build / Pipeline  ─────────────────────────
+
+builder.Services.AddControllers();   // add this line
+
+// Register an HttpClient whose BaseAddress = https://{host}/
+builder.Services.AddScoped(sp =>
+{
+    var nav = sp.GetRequiredService<NavigationManager>();
+    return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
+});
+
+
 var app = builder.Build();
-app.UseAuthentication();
-app.UseAuthorization();
 
-
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseWebAssemblyDebugging();
@@ -48,24 +70,29 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
+app.MapControllers();               // add this after app.MapRazorPages();
+
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 
+app.UseRouting();
 
-app.UseAntiforgery();
+app.UseCors("CorsPolicy");
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapStaticAssets();
+app.UseAntiforgery();      // ⬅️  **added back – after authN/authZ, before endpoints**
+
+app.MapRazorPages();       // needed only if you scaffold/enable Identity UI
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .AddInteractiveWebAssemblyRenderMode()
     .AddAdditionalAssemblies(typeof(ChatApp.Client._Imports).Assembly);
 
-app.UseCors("CorsPolicy");
-
-app.MapHub<ChatHub>("/Chathub");
-
+app.MapHub<ChatHub>("/chathub");
 
 app.Run();

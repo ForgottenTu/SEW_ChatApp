@@ -1,166 +1,222 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using ChatApp.Domain.Interfaces;
+using ChatApp.Model.Models;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 
 namespace ChatApp.Hubs;
 
-public class ChatHub : Hub
+public sealed class ChatHub : Hub
 {
-    // ChatRoom: <roomId, roomName>
-    private static readonly Dictionary<string, string> ChatRoom = new();
+    private readonly IChatRoomRepository _rooms;
+    private readonly IChatRoomMembershipRepository _members;
+    private readonly IChatMessageRepository _messages;
+    private readonly UserManager<ApplicationUser> _userManager; // null ⇒ no Identity
 
-    // ChatRoomUsers: <connectionId, chatRoomId>
-    private static readonly Dictionary<string, string> ChatRoomUsers = new();
-
-    // RegisteredUsers: <connectionId, nickname>
-    private static readonly Dictionary<string, string> RegisteredUsers = new();
-
-    public ChatHub()
+    public ChatHub(
+        IChatRoomRepository rooms,
+        IChatRoomMembershipRepository members,
+        IChatMessageRepository messages,
+        UserManager<ApplicationUser> userManager)
     {
-        if (!ChatRoom.ContainsKey("1"))
-        {
-            ChatRoom.Add("1", "General");
-        }
+        _rooms = rooms;
+        _members = members;
+        _messages = messages;
+        _userManager = userManager;
     }
 
-    #region Registration
+    /*────────────────────────────  bootstrap  ─────────────────────────────*/
 
+    public override async Task OnConnectedAsync()
+    {
+        // Ensure a default room called “General” exists (Id = "1").
+        if (!((await _rooms.GetAllAsync())?.Any() ?? false))
+            await _rooms.AddAsync(new ChatRoom { Id = "1", Name = "General" });
+
+        await base.OnConnectedAsync();
+    }
+
+    /*────────────────────────────  registration  ──────────────────────────*/
+
+    /// <summary>For anonymous callers; authenticated users may also set a display name.</summary>
     public async Task Register(string nickname)
     {
         nickname = nickname.Trim();
 
-        if (RegisteredUsers.Values.Any(n => string.Equals(n, nickname, StringComparison.OrdinalIgnoreCase)) || nickname.ToLower() == "system")
+        // Authenticated path – store nickname on the Identity record
+        if (IsAuthenticated())
         {
-            await Clients.Caller.SendAsync("Register", false);
+            var user = await _userManager!.GetUserAsync(Context.User);
+            if (user is null || string.IsNullOrWhiteSpace(nickname))
+            {
+                await Clients.Caller.SendAsync("Register", false);
+                return;
+            }
+
+            user.DisplayName = nickname;
+            await _userManager.UpdateAsync(user);
+            await Clients.Caller.SendAsync("Register", true);
             return;
         }
 
-        RegisteredUsers[Context.ConnectionId] = nickname;
-        await Clients.Caller.SendAsync("Register", true);
+        // Guest path – nickname must be unique among active members
+        var nameTaken = (await _members.GetAllAsync() ?? Enumerable.Empty<ChatRoomMembership>())
+            .Any(m => m.Nickname != null &&
+                      m.Nickname.Equals(nickname, StringComparison.OrdinalIgnoreCase));
+
+        var ok = !nameTaken && !nickname.Equals("system", StringComparison.OrdinalIgnoreCase);
+        await Clients.Caller.SendAsync("Register", ok);
     }
 
-    #endregion
-
-    #region Rooms Leave Join
-    
-    public async Task JoinRoom(string chatRoomId)
-    {
-        if (ChatRoom.TryGetValue(chatRoomId, out var roomName))
-        {
-            await Groups.AddToGroupAsync(Context.ConnectionId, chatRoomId);
-            ChatRoomUsers[Context.ConnectionId] = chatRoomId;
-            Clients.Group(chatRoomId).SendAsync("ReceiveMessage", "System", $"{RegisteredUsers[Context.ConnectionId]} has joined the room.");
-            await UpdateRoomUsers(chatRoomId);
-        }
-    }
-
-    public async Task LeaveRoom(string chatRoomId)
-    {
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatRoomId);
-        ChatRoomUsers.Remove(Context.ConnectionId);
-        
-        Clients.Group(chatRoomId).SendAsync("ReceiveMessage", "System", $"{RegisteredUsers[Context.ConnectionId]} Left the room.");
-        await UpdateRoomUsers(chatRoomId);
-    }
+    /*───────────────────────────  room listing  ───────────────────────────*/
 
     public async Task GetRooms()
     {
-        await Clients.Caller.SendAsync("AllRooms", ChatRoom);
+        var dict = (await _rooms.GetAllAsync() ?? Enumerable.Empty<ChatRoom>())
+            .ToDictionary(r => r.Id, r => r.Name);
+        await Clients.Caller.SendAsync("AllRooms", dict);
     }
 
-    private async Task UpdateRoomUsers(string chatRoomId)
+    /*────────────────────────────  join / leave  ──────────────────────────*/
+
+    public async Task JoinRoom(string roomId)
     {
-        var usersInRoom = ChatRoomUsers
-            .Where(kvp => kvp.Value == chatRoomId)
-            .Select(kvp => RegisteredUsers.TryGetValue(kvp.Key, out var nick) ? nick : "Unknown")
-            .ToList();
-        await Clients.Group(chatRoomId).SendAsync("RoomUsers", usersInRoom);
+        if (!await RoomExists(roomId)) return;
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, roomId);
+
+        await _members.AddAsync(new ChatRoomMembership
+        {
+            ChatRoomId = roomId,
+            ConnectionId = Context.ConnectionId,
+            UserId = IsAuthenticated() ? _userManager!.GetUserId(Context.User) : null
+        });
+
+        var display = await GetDisplayNameAsync();
+        await Clients.Group(roomId).SendAsync("ReceiveMessage", "System", $"{display} joined the room.");
+        await SendRoomUserList(roomId);
     }
 
-    #endregion
-
-    #region Create & Delete Room
-
-    public async Task CreateRoom(string chatRoomName)
+    public async Task LeaveRoom(string roomId)
     {
-        if (ChatRoom.ContainsValue(chatRoomName))
+        var memberships = await _members.GetByConnectionIdAsync(Context.ConnectionId);
+        var mem = memberships.FirstOrDefault(m => m.ChatRoomId == roomId);
+        if (mem is null) return;
+
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId);
+        await _members.DeleteAsync(mem);
+
+        var display = await GetDisplayNameAsync();
+        await Clients.Group(roomId).SendAsync("ReceiveMessage", "System", $"{display} left the room.");
+        await SendRoomUserList(roomId);
+    }
+
+    /*────────────────────────────  room admin  ────────────────────────────*/
+
+    public async Task CreateRoom(string name)
+    {
+        if (await _rooms.GetByNameAsync(name) is not null)
         {
             await Clients.Caller.SendAsync("Error", "Chat room already exists.");
+            return;
         }
-        else
-        {
-            var id = Guid.NewGuid().ToString();
-            ChatRoom.Add(id, chatRoomName);
-            await Clients.All.SendAsync("RoomCreated", id, chatRoomName);
-        }
+
+        var room = await _rooms.AddAsync(new ChatRoom { Name = name });
+        await Clients.All.SendAsync("RoomCreated", room!.Id, room.Name);
     }
 
-    public async Task DeleteRoom(string chatRoomId)
+    public async Task DeleteRoom(string roomId)
     {
-        if (chatRoomId == "1")
+        if (roomId == "1")
         {
             await Clients.Caller.SendAsync("Error", "Cannot delete the General chat room.");
+            return;
         }
-        else if (ChatRoomUsers.ContainsValue(chatRoomId))
+
+        if ((await _members.GetByRoomIdAsync(roomId)).Any())
         {
-            await Clients.Caller.SendAsync("Error", $"Chat room '{ ChatRoom[chatRoomId] }' is not empty.");
+            await Clients.Caller.SendAsync("Error", "Chat room is not empty.");
+            return;
         }
-        else if (ChatRoom.ContainsKey(chatRoomId))
-        {
-            ChatRoom.Remove(chatRoomId);
-            await Clients.All.SendAsync("RoomDeleted", chatRoomId);
-        }
-        else
+
+        var room = (await _rooms.GetAllAsync())?.FirstOrDefault(r => r.Id == roomId);
+        if (room is null)
         {
             await Clients.Caller.SendAsync("Error", "Chat room does not exist.");
+            return;
         }
+
+        await _rooms.DeleteAsync(room);
+        await Clients.All.SendAsync("RoomDeleted", roomId);
     }
 
-    #endregion
+    /*───────────────────────────  messaging  ──────────────────────────────*/
 
-    #region Messaging
-
-    public async Task SendMessage(string message, string chatRoomId)
+    public async Task SendMessage(string roomId, string message)
     {
-        if (!RegisteredUsers.TryGetValue(Context.ConnectionId, out string? user))
+        if (!await RoomExists(roomId))
+        {
+            await Clients.Caller.SendAsync("Error", "Chat room does not exist.");
+            return;
+        }
+
+        var sender = await GetDisplayNameAsync();
+        if (string.IsNullOrWhiteSpace(sender))
         {
             await Clients.Caller.SendAsync("Error", "You must register a nickname before sending messages.");
             return;
         }
 
-        if (ChatRoom.ContainsKey(chatRoomId))
+        await _messages.AddAsync(new ChatMessage
         {
-            await Clients.Group(chatRoomId).SendAsync("ReceiveMessage", user, message);
-        }
-        else
-        {
-            await Clients.Caller.SendAsync("Error", "Chat room does not exist.");
-        }
+            ChatRoomId = roomId,
+            UserId = IsAuthenticated() ? _userManager!.GetUserId(Context.User) : null,
+            Sender = sender,
+            Text = message
+        });
+
+        await Clients.Group(roomId).SendAsync("ReceiveMessage", sender, message);
     }
 
-    #endregion
+    /*─────────────────────────  disconnect cleanup  ───────────────────────*/
 
-    #region Connection Leave Handler
-
-    public override async Task OnDisconnectedAsync(Exception? exception)
+    public override async Task OnDisconnectedAsync(Exception? ex)
     {
-        if (ChatRoomUsers.TryGetValue(Context.ConnectionId, out var chatRoomId))
+        var memberships = await _members.GetByConnectionIdAsync(Context.ConnectionId);
+        foreach (var m in memberships)
         {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatRoomId);
-            ChatRoomUsers.Remove(Context.ConnectionId);
-            await UpdateRoomUsers(chatRoomId);
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, m.ChatRoomId);
+            await Clients.Group(m.ChatRoomId)
+                .SendAsync("ReceiveMessage", "System", $"{await GetDisplayNameAsync()} disconnected.");
+            await SendRoomUserList(m.ChatRoomId);
+            await _members.DeleteAsync(m);
         }
 
-        if (RegisteredUsers.ContainsKey(Context.ConnectionId))
-        {
-            RegisteredUsers.Remove(Context.ConnectionId);
-        }
-
-        if (ChatRoomUsers.ContainsKey(Context.ConnectionId))
-        {
-            ChatRoomUsers.Remove(Context.ConnectionId);
-        }
-
-        await base.OnDisconnectedAsync(exception);
+        await base.OnDisconnectedAsync(ex);
     }
 
-    #endregion
+    /*────────────────────────────── helpers ───────────────────────────────*/
+
+    private bool IsAuthenticated() =>
+        _userManager is not null && Context.User?.Identity?.IsAuthenticated == true;
+
+    private async Task<string> GetDisplayNameAsync()
+    {
+        if (IsAuthenticated())
+            return (await _userManager!.GetUserAsync(Context.User))?.DisplayName ?? "Unknown";
+
+        var nick = (await _members.GetByConnectionIdAsync(Context.ConnectionId))
+            .FirstOrDefault()?.Nickname;
+        return nick ?? "Unknown";
+    }
+
+    private async Task<bool> RoomExists(string id) =>
+        (await _rooms.GetAllAsync())?.Any(r => r.Id == id) ?? false;
+
+    private async Task SendRoomUserList(string roomId)
+    {
+        var list = (await _members.GetByRoomIdAsync(roomId))
+            .Select(m => m.User?.DisplayName ?? m.Nickname ?? "Unknown")
+            .ToList();
+        await Clients.Group(roomId).SendAsync("RoomUsers", list);
+    }
 }

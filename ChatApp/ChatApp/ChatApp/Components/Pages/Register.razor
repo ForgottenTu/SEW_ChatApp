@@ -1,87 +1,91 @@
 @page "/register"
 @using System.ComponentModel.DataAnnotations
-@using ChatApp.Model.Models
-@using Microsoft.AspNetCore.Identity
-@inject UserManager<ApplicationUser> UserManager
+@using System.Net.Http.Json
+@inject HttpClient        Http
 @inject NavigationManager Nav
+@inject ILogger<Register> Log
 
-<h3>Register</h3>
+@rendermode InteractiveServer
+<PageTitle>Register</PageTitle>
 
-@if (registerErrors.Any())
-{
-    <div class="alert alert-danger">
-        @foreach (var error in registerErrors)
-        {
-            <div>@error</div>
-        }
-    </div>
-}
+<h3 class="mb-4">Create account</h3>
 
-<EditForm Model="@registerModel" OnValidSubmit="RegisterUser" FormName="registerForm">
+<EditForm Model="@model" OnValidSubmit="HandleRegister" FormName="RegisterForm">
     <DataAnnotationsValidator />
     <ValidationSummary />
 
     <div class="mb-3">
-        <label for="email" class="form-label">E-Mail-Adresse</label>
-        <InputText id="email" class="form-control" @bind-Value="registerModel.Email" />
-        <ValidationMessage For="@(() => registerModel.Email)" />
+        <label class="form-label">Display name</label>
+        <InputText class="form-control" @bind-Value="model.DisplayName" />
     </div>
 
     <div class="mb-3">
-        <label for="username" class="form-label">Benutzername</label>
-        <InputText id="username" class="form-control" @bind-Value="registerModel.UserName" />
-        <ValidationMessage For="@(() => registerModel.UserName)" />
+        <label class="form-label">Email</label>
+        <InputText class="form-control" @bind-Value="model.Email" />
     </div>
 
     <div class="mb-3">
-        <label for="password" class="form-label">Passwort</label>
-        <InputText id="password" class="form-control" type="password" @bind-Value="registerModel.Password" />
-        <ValidationMessage For="@(() => registerModel.Password)" />
+        <label class="form-label">Password</label>
+        <InputText class="form-control" @bind-Value="model.Password" type="password" />
     </div>
 
-    <button type="submit" class="btn btn-primary">Registrieren</button>
+    <div class="mb-3">
+        <label class="form-label">Confirm password</label>
+        <InputText class="form-control" @bind-Value="model.ConfirmPassword" type="password"/>
+    </div>
+
+    <button class="btn btn-primary" type="submit" disabled="@busy">
+        @if (busy) { <span class="spinner-border spinner-border-sm me-2" /> }
+        Register
+    </button>
+    <a class="btn btn-link" href="/login">I already have an account</a>
+
+    @if (errors.Count > 0)
+    {
+        <ul class="text-danger mt-3">
+            @foreach (var e in errors) { <li>@e</li> }
+        </ul>
+    }
 </EditForm>
 
 @code {
-    private RegisterModel registerModel = new();
-    private List<string> registerErrors = new();
+    private readonly RegisterDto model  = new();
+    private readonly List<string> errors = new();
+    private bool busy;
 
-    private async Task RegisterUser()
+    private async Task HandleRegister()
     {
-        registerErrors.Clear();
+        busy = true;
+        errors.Clear();
 
-        var user = new ApplicationUser
+        var resp = await Http.PostAsJsonAsync("api/account/register", model);
+
+        if (resp.IsSuccessStatusCode)
         {
-            UserName = registerModel.UserName,
-            Email = registerModel.Email
-        };
-
-        var result = await UserManager.CreateAsync(user, registerModel.Password);
-
-        if (result.Succeeded)
-        {
-            Nav.NavigateTo("/Login");
+            Log.LogInformation("User {Email} registered.", model.Email);
+            Nav.NavigateTo("/chat");     // already signed in by the API
         }
         else
         {
-            foreach (var error in result.Errors)
-            {
-                registerErrors.Add(error.Description);
-            }
+            // API returns JSON array or plain text – just show the content
+            errors.Add(await resp.Content.ReadAsStringAsync());
         }
+
+        busy = false;
     }
 
-    public class RegisterModel
+    private sealed class RegisterDto
     {
-        [Required(ErrorMessage = "E-Mail ist erforderlich.")]
-        [EmailAddress(ErrorMessage = "Ungültige E-Mail-Adresse.")]
-        public string Email { get; set; } = string.Empty;
+        [Required, StringLength(32)]
+        public string DisplayName { get; set; } = "";
 
-        [Required(ErrorMessage = "Benutzername ist erforderlich.")]
-        public string UserName { get; set; } = string.Empty;
+        [Required, EmailAddress]
+        public string Email { get; set; } = "";
 
-        [Required(ErrorMessage = "Passwort ist erforderlich.")]
-        [MinLength(6, ErrorMessage = "Das Passwort muss mindestens 6 Zeichen lang sein.")]
-        public string Password { get; set; } = string.Empty;
+        [Required, MinLength(6)]
+        public string Password { get; set; } = "";
+
+        [Compare(nameof(Password), ErrorMessage = "Passwords don't match")]
+        public string ConfirmPassword { get; set; } = "";
     }
 }
