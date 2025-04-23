@@ -110,6 +110,11 @@ public sealed class ChatHub : Hub
         var display = await GetDisplayNameAsync();
         await Clients.Group(roomId).SendAsync("ReceiveMessage", "System", $"{display} left the room.");
         await SendRoomUserList(roomId);
+        
+        await Clients.Caller.SendAsync("LeftRoom", roomId);   // tell the leaver
+        await Clients.Group(roomId)
+            .SendAsync("ReceiveMessage", "System", $"{display} left the room.");
+        await SendRoomUserList(roomId);
     }
 
     /*────────────────────────────  room admin  ────────────────────────────*/
